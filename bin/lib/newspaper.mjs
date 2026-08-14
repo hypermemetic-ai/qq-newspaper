@@ -418,8 +418,16 @@ export async function withNewspaperLock(stateRoot, edition, callback) {
   let handle;
   try { handle = await open(path, "wx", 0o600); }
   catch (error) {
-    if (error?.code === "EEXIST") return { published: false, reason: "busy" };
-    throw error;
+    if (error?.code !== "EEXIST") throw error;
+    let owner;
+    try { owner = Number.parseInt((await readFile(path, "utf8")).trim(), 10); } catch {}
+    if (processAlive(owner)) return { published: false, reason: "busy" };
+    await unlink(path).catch((failure) => { if (failure?.code !== "ENOENT") throw failure; });
+    try { handle = await open(path, "wx", 0o600); }
+    catch (retryError) {
+      if (retryError?.code === "EEXIST") return { published: false, reason: "busy" };
+      throw retryError;
+    }
   }
   try {
     await handle.writeFile(`${process.pid}\n`);

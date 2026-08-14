@@ -12,6 +12,7 @@ import {
   pruneNewspaperState,
   publishEdition,
   runNewsroom,
+  withNewspaperLock,
   writerSystemPrompt,
 } from "../bin/lib/newspaper.mjs";
 
@@ -130,6 +131,13 @@ assert.equal(await pruneNewspaperState(retentionRoot, { now: new Date("2026-08-1
 await assert.rejects(access(oldRun), { code: "ENOENT" });
 await assert.rejects(access(oldArchive), { code: "ENOENT" });
 await access(activeRun);
+
+const lockRoot = join(scratch, "locks");
+await mkdir(lockRoot);
+await writeFile(join(lockRoot, "hourly.lock"), "99999999\n");
+assert.equal(await withNewspaperLock(lockRoot, "hourly", async () => "recovered"), "recovered");
+await writeFile(join(lockRoot, "hourly.lock"), `${process.pid}\n`);
+assert.deepEqual(await withNewspaperLock(lockRoot, "hourly", async () => "unexpected"), { published: false, reason: "busy" });
 
 let tool;
 const investigationLog = join(scratch, "investigations.md");
