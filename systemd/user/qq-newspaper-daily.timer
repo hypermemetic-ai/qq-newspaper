@@ -1,0 +1,12 @@
+[Unit]
+Description=Publish the daily qq newspaper edition at 05:00
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+Unit=qq-newspaper@daily.service
+
+[Install]
+WantedBy=timers.target

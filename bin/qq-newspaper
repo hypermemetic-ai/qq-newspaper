@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { DEFAULT_MODEL, publishEdition, withNewspaperLock } from "./lib/newspaper.mjs";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const edition = process.argv[2];
+if (!edition || process.argv.length !== 3 || !["hourly", "daily", "weekly"].includes(edition)) {
+  console.error("usage: qq-newspaper hourly|daily|weekly");
+  process.exit(2);
+}
+
+const stateRoot = resolve(process.env.QQ_NEWSPAPER_STATE_ROOT || join(
+  process.env.XDG_STATE_HOME || join(process.env.HOME, ".local", "state"),
+  "qq", "newspaper",
+));
+const timeoutMs = Number(process.env.QQ_NEWSPAPER_TIMEOUT_MS || 0);
+if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+  console.error("QQ_NEWSPAPER_TIMEOUT_MS must be a non-negative number");
+  process.exit(2);
+}
+
+try {
+  const result = await withNewspaperLock(stateRoot, edition, () => publishEdition({
+    root,
+    stateRoot,
+    edition,
+    registryPath: process.env.QQ_NEWSPAPER_REGISTRY,
+    projectsRoot: process.env.QQ_NEWSPAPER_PROJECTS_ROOT,
+    piBin: process.env.QQ_NEWSPAPER_PI_BIN || "pi",
+    model: process.env.QQ_NEWSPAPER_MODEL || DEFAULT_MODEL,
+    thinking: process.env.QQ_NEWSPAPER_THINKING || "high",
+    webExtension: process.env.QQ_NEWSPAPER_WEB_EXTENSION,
+    timeoutMs,
+  }));
+  if (result.published) console.log(`${edition} edition published: ${result.archivePath}`);
+  else console.log(`${edition} edition unchanged: ${result.reason}`);
+} catch (error) {
+  console.error(`qq-newspaper: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}

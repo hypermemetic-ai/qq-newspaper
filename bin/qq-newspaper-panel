@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+edition=${1:-}
+if [[ $# -ne 1 || ! $edition =~ ^(hourly|daily|weekly)$ ]]; then
+  echo 'usage: qq-newspaper-panel hourly|daily|weekly' >&2
+  exit 2
+fi
+
+state_root=${QQ_NEWSPAPER_STATE_ROOT:-${XDG_STATE_HOME:-${HOME:?HOME is required}/.local/state}/qq/newspaper}
+current="$state_root/current/$edition.md"
+status="$state_root/status/$edition.json"
+label=${edition^^}
+last=
+
+restore_cursor() { printf '\033[?25h'; }
+trap restore_cursor EXIT INT TERM
+printf '\033[?25l'
+
+while :; do
+  current_fingerprint=$(stat -c '%Y:%s' "$current" 2>/dev/null || printf missing)
+  status_fingerprint=$(stat -c '%Y:%s' "$status" 2>/dev/null || printf missing)
+  fingerprint="$current_fingerprint:$status_fingerprint"
+  if [[ $fingerprint != "$last" ]]; then
+    printf '\033[2J\033[H'
+    printf '\033[1mthe qq newspaper · %s\033[0m\n' "$label"
+    if [[ -f $status ]]; then
+      node - "$status" <<'NODE'
+const fs = require("fs");
+try {
+  const value = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+  const stage = String(value.stage || value.state || "").toUpperCase();
+  const activity = value.last_activity_at ? new Date(value.last_activity_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
+  process.stdout.write(`\u001b[2m${stage}${activity ? ` · activity ${activity}` : ""}\u001b[0m\n`);
+} catch {}
+NODE
+    elif [[ -f $current ]]; then
+      printf '\033[2mupdated %s\033[0m\n' "$(date -r "$current" '+%A, %B %-d · %-I:%M %p')"
+    fi
+    printf '\n'
+    if [[ -f $current ]]; then
+      cat -- "$current"
+    else
+      printf '\033[2mWaiting for the first %s edition.\033[0m\n' "$edition"
+    fi
+    last=$fingerprint
+  fi
+  [[ ${QQ_NEWSPAPER_PANEL_ONCE:-0} == 1 ]] && break
+  sleep 2
+done

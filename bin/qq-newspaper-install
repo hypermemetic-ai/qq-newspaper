@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (($#)); then
+  echo 'usage: qq-newspaper-install' >&2
+  exit 2
+fi
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+target=${XDG_CONFIG_HOME:-${HOME:?HOME is required}/.config}/systemd/user
+mkdir -p "$target"
+for unit in \
+  qq-newspaper@.service \
+  qq-newspaper-hourly.timer \
+  qq-newspaper-daily.timer \
+  qq-newspaper-weekly.timer
+do
+  install -m 0644 "$root/systemd/user/$unit" "$target/$unit"
+done
+systemctl --user daemon-reload
+systemctl --user enable --now \
+  qq-newspaper-hourly.timer \
+  qq-newspaper-daily.timer \
+  qq-newspaper-weekly.timer
+QQ_NEWSPAPER_REPLACE=1 "$root/bin/qq-newspaper-open"
+echo 'qq newspaper timers and Herdr panels are ready.'

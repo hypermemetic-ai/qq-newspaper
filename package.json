@@ -1,0 +1,8 @@
+{
+  "name": "qq-newspaper",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types tests/test-newspaper.mjs . && tests/test-newspaper.sh ."
+  }
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Publish the qq newspaper %i edition
+
+[Service]
+Type=oneshot
+TimeoutStartSec=6h
+WorkingDirectory=%h/projects/qq-newspaper
+UMask=0077
+Environment="PATH=%h/.local/bin:%h/.bun/bin:%h/.opencode/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=%h/projects/qq-newspaper/bin/qq-newspaper %i

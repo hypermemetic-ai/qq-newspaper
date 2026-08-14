@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (($#)); then
+  echo 'usage: qq-newspaper-open' >&2
+  exit 2
+fi
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+workspace=${QQ_NEWSPAPER_WORKSPACE_ID:-${HERDR_WORKSPACE_ID:-}}
+if [[ -z $workspace ]]; then
+  snapshot=$(herdr workspace list)
+  workspace=$(SNAPSHOT="$snapshot" node - <<'NODE'
+const value = JSON.parse(process.env.SNAPSHOT);
+const spaces = value?.result?.workspaces ?? [];
+const found = spaces.find((item) => item.label === "qq") ?? spaces.find((item) => item.worktree?.repo_name === "qq");
+if (found?.workspace_id) process.stdout.write(found.workspace_id);
+NODE
+)
+fi
+[[ -n $workspace ]] || { echo 'qq-newspaper-open: qq Herdr workspace is unavailable' >&2; exit 1; }
+
+snapshot=$(herdr tab list)
+existing=$(SNAPSHOT="$snapshot" WORKSPACE="$workspace" node - <<'NODE'
+const value = JSON.parse(process.env.SNAPSHOT);
+const found = (value?.result?.tabs ?? []).find((item) => item.workspace_id === process.env.WORKSPACE && item.label === "newspaper");
+if (found?.tab_id) process.stdout.write(found.tab_id);
+NODE
+)
+if [[ -n $existing && ${QQ_NEWSPAPER_REPLACE:-0} == 1 ]]; then
+  herdr tab close "$existing" >/dev/null
+  existing=
+fi
+if [[ -n $existing ]]; then
+  [[ ${QQ_NEWSPAPER_FOCUS:-1} == 0 ]] || herdr tab focus "$existing" >/dev/null
+  echo "qq newspaper already open: $existing"
+  exit 0
+fi
+pane_add=${QQ_NEWSPAPER_PANE_ADD:-$(command -v qq-herdr-pane-add || true)}
+[[ -n $pane_add ]] || { echo 'qq-newspaper-open: qq-herdr-pane-add is unavailable' >&2; exit 1; }
+
+created=$(herdr tab create --workspace "$workspace" --label newspaper --cwd "$root" --no-focus)
+tab=$(SNAPSHOT="$created" node - <<'NODE'
+const value = JSON.parse(process.env.SNAPSHOT);
+const id = value?.result?.tab?.tab_id ?? value?.result?.tab_id;
+if (id) process.stdout.write(id);
+NODE
+)
+hourly=$(SNAPSHOT="$created" node - <<'NODE'
+const value = JSON.parse(process.env.SNAPSHOT);
+const id = value?.result?.root_pane?.pane_id;
+if (id) process.stdout.write(id);
+NODE
+)
+[[ -n $tab && -n $hourly ]] || { echo 'qq-newspaper-open: Herdr returned a malformed tab' >&2; exit 1; }
+complete=0
+cleanup() {
+  if (( ! complete )); then herdr tab close "$tab" >/dev/null 2>&1 || true; fi
+}
+trap cleanup EXIT
+
+daily_json=$("$pane_add" "$hourly" --cwd "$root" --no-focus)
+daily=$(SNAPSHOT="$daily_json" node - <<'NODE'
+const value = JSON.parse(process.env.SNAPSHOT);
+const id = value?.result?.pane?.pane_id;
+if (id) process.stdout.write(id);
+NODE
+)
+[[ -n $daily ]] || { echo 'qq-newspaper-open: Herdr returned no daily pane' >&2; exit 1; }
+weekly_json=$("$pane_add" "$daily" --cwd "$root" --no-focus)
+weekly=$(SNAPSHOT="$weekly_json" node - <<'NODE'
+const value = JSON.parse(process.env.SNAPSHOT);
+const id = value?.result?.pane?.pane_id;
+if (id) process.stdout.write(id);
+NODE
+)
+[[ -n $weekly ]] || { echo 'qq-newspaper-open: Herdr returned no weekly pane' >&2; exit 1; }
+
+for item in "hourly:$hourly" "daily:$daily" "weekly:$weekly"; do
+  label=${item%%:*}
+  pane=${item#*:}
+  herdr pane rename "$pane" "$label" >/dev/null
+  herdr pane run "$pane" "$root/bin/qq-newspaper-panel" "$label" >/dev/null
+done
+
+complete=1
+[[ ${QQ_NEWSPAPER_FOCUS:-1} == 0 ]] || herdr tab focus "$tab" >/dev/null
+echo "qq newspaper opened: $tab"
